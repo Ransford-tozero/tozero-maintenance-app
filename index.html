@@ -1,46 +1,194 @@
-// Function called by BOTH the Load button AND the QR Scanner
-const API_URL = "https://script.google.com/macros/s/AKfycbx.../exec";
-async function loadEquipmentDetails(pidToLoad) {
-  // 1. Get PID from argument (QR Scanner) or from input box (Manual Entry)
-  const inputEl = document.getElementById('pidInput');
-  const pid = (pidToLoad || inputEl.value).trim();
-  
-  if (!pid) return;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maintenance Hub PWA</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased">
 
-  // Show loading indicator
-  document.getElementById('machineCard').classList.add('opacity-50');
+  <!-- Header -->
+  <header class="bg-slate-800 border-b border-slate-700 p-4 sticky top-0 z-50 flex justify-between items-center">
+    <h1 class="text-xl font-bold flex items-center gap-2">🛠️ Maintenance Hub</h1>
+    <button id="scanBtn" onclick="toggleScanner()" class="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg text-sm flex items-center gap-2 shadow-lg transition">
+      📷 Scan QR
+    </button>
+  </header>
 
-  try {
-    // 2. Fetch live machine data from Apps Script
-    const response = await fetch(`${API_URL}?action=getMachineDetails&pid=${encodeURIComponent(pid)}`);
-    const data = await response.json();
+  <!-- Scanner Container (Hidden by default) -->
+  <div id="scannerModal" class="hidden fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-4">
+    <div class="bg-slate-800 p-4 rounded-xl max-w-sm w-full border border-slate-700 relative">
+      <h2 class="text-lg font-bold mb-3 text-center">Scan Machine QR Code</h2>
+      <div id="reader" class="overflow-hidden rounded-lg"></div>
+      <button onclick="toggleScanner()" class="mt-4 w-full bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 rounded-lg transition">Close Scanner</button>
+    </div>
+  </div>
 
-    if (data.error) {
-      alert('Machine not found: ' + pid);
-      return;
+  <main class="max-w-2xl mx-auto p-4 space-y-6">
+
+    <!-- Manual Entry Bar -->
+    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex gap-2">
+      <input type="text" id="pidInput" placeholder="Enter Machine / PID (e.g. FL-003)" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white uppercase focus:outline-none focus:border-blue-500">
+      <button onclick="loadEquipmentDetails()" class="bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-2 rounded-lg transition">Load</button>
+    </div>
+
+    <!-- Machine Info Card -->
+    <div id="machineCard" class="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg transition-opacity duration-200">
+      <div class="flex justify-between items-start mb-4">
+        <div>
+          <span id="displayCategory" class="text-xs font-semibold bg-blue-900/50 text-blue-300 border border-blue-700/50 px-2.5 py-1 rounded-full uppercase">VEHICLE</span>
+          <h2 id="displayPid" class="text-2xl font-black mt-2 tracking-wide">FL-003</h2>
+          <p id="displayTitle" class="text-slate-400 font-medium">Terra Forklift</p>
+        </div>
+        <span id="displayLocation" class="bg-slate-700 text-slate-300 text-xs px-3 py-1 rounded-full font-medium">Karlsfeld</span>
+      </div>
+
+      <!-- Checklist Section -->
+      <div class="mt-6">
+        <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">📋 Scheduled Checklist</h3>
+        <div id="checklistContainer" class="space-y-2">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- History Timeline Section -->
+      <div class="mt-8 pt-6 border-t border-slate-700/60">
+        <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">📜 Maintenance History</h3>
+        <div id="timelineContainer" class="space-y-4 border-l-2 border-slate-700 ml-2 pl-4">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // 1. Google Apps Script Web App Endpoint
+    const API_URL = "https://script.google.com/a/macros/tozero.solutions/s/AKfycbwaerrHyeBm3S9itP0CZZe_Ub3b9pUW-nzwd5CNtBR8FUs4kTfzt_JqpyNHgZtyKKqj/exec";
+
+    let html5QrcodeScanner = null;
+
+    // 2. Load Machine Details (called by Load button or QR Scanner)
+    async function loadEquipmentDetails(pidToLoad) {
+      const inputEl = document.getElementById('pidInput');
+      const pid = (pidToLoad || inputEl.value).trim();
+      
+      if (!pid) return;
+
+      inputEl.value = pid.toUpperCase();
+      document.getElementById('machineCard').classList.add('opacity-50');
+
+      try {
+        const response = await fetch(`${API_URL}?action=getMachineDetails&pid=${encodeURIComponent(pid)}`);
+        const data = await response.json();
+
+        if (data.error) {
+          alert('Machine not found: ' + pid);
+          return;
+        }
+
+        // Update Header Details
+        document.getElementById('displayPid').textContent = (data.pid || pid).toUpperCase();
+        document.getElementById('displayTitle').textContent = data.info['Equipment Name'] || data.info['Type'] || 'Equipment';
+        document.getElementById('displayLocation').textContent = data.info['Location'] || 'Facility';
+
+        // Render Lists
+        renderChecklist(data.maint);
+        renderTimeline(data.history);
+
+      } catch (err) {
+        console.error('Failed to load machine data:', err);
+        alert('Failed to load machine data. Please check network connection.');
+      } finally {
+        document.getElementById('machineCard').classList.remove('opacity-50');
+      }
     }
 
-    // 3. Update the UI dynamically
-    document.getElementById('displayPid').textContent = data.pid.toUpperCase();
-    document.getElementById('displayTitle').textContent = data.info['Equipment Name'] || data.info['Type'] || 'Equipment';
-    document.getElementById('displayLocation').textContent = data.info['Location'] || 'Facility';
+    // Render Checklist
+    function renderChecklist(items) {
+      const container = document.getElementById('checklistContainer');
+      container.innerHTML = '';
+      
+      if (!items || items.length === 0) {
+        container.innerHTML = '<p class="text-sm text-slate-500 italic">No scheduled checklist tasks.</p>';
+        return;
+      }
 
-    // 4. Render Maintenance Checklist
-    renderChecklist(data.maint);
+      items.forEach(item => {
+        const row = document.createElement('label');
+        row.className = 'flex items-start gap-3 p-3 bg-slate-900/60 rounded-lg border border-slate-700/50 hover:border-slate-600 transition cursor-pointer';
+        row.innerHTML = `
+          <input type="checkbox" class="mt-1 rounded bg-slate-800 border-slate-600 text-blue-600 focus:ring-blue-500">
+          <span class="text-sm text-slate-200">${item['Task Description'] || item['Task'] || 'Maintenance Check'}</span>
+        `;
+        container.appendChild(row);
+      });
+    }
 
-    // 5. Render Timeline History
-    renderTimeline(data.history);
+    // Render Timeline
+    function renderTimeline(logs) {
+      const container = document.getElementById('timelineContainer');
+      container.innerHTML = '';
 
-  } catch (err) {
-    console.error('Failed to load machine data:', err);
-  } finally {
-    document.getElementById('machineCard').classList.remove('opacity-50');
-  }
-}
+      if (!logs || logs.length === 0) {
+        container.innerHTML = '<p class="text-sm text-slate-500 italic">No historical log entries recorded.</p>';
+        return;
+      }
 
-// Bind Enter Key press inside the input box
-document.getElementById('pidInput').addEventListener('keypress', function (e) {
-  if (e.key === 'Enter') {
-    loadEquipmentDetails();
-  }
-});
+      logs.forEach(log => {
+        const entry = document.createElement('div');
+        entry.className = 'relative group';
+        entry.innerHTML = `
+          <div class="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-blue-500 ring-4 ring-slate-800"></div>
+          <div class="text-xs font-semibold text-blue-400 mb-0.5">${log['Date'] || 'Recent'}</div>
+          <p class="text-sm text-slate-300 font-medium">${log['Maintenance Action'] || log['Action'] || 'Service Completed'}</p>
+          <p class="text-xs text-slate-500 mt-0.5">Logged by: ${log['Technician'] || 'Operator'}</p>
+        `;
+        container.appendChild(entry);
+      });
+    }
+
+    // Bind Enter key press on PID Input
+    document.getElementById('pidInput').addEventListener('keypress', function (e) {
+      if (e.key === 'Enter') {
+        loadEquipmentDetails();
+      }
+    });
+
+    // Toggle QR Scanner Modal
+    function toggleScanner() {
+      const modal = document.getElementById('scannerModal');
+      const isHidden = modal.classList.contains('hidden');
+
+      if (isHidden) {
+        modal.classList.remove('hidden');
+        html5QrcodeScanner = new Html5Qrcode("reader");
+        html5QrcodeScanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          (decodedText) => {
+            toggleScanner();
+            loadEquipmentDetails(decodedText);
+          },
+          (errorMessage) => { /* scanning errors */ }
+        ).catch(err => console.error(err));
+      } else {
+        if (html5QrcodeScanner) {
+          html5QrcodeScanner.stop().then(() => {
+            html5QrcodeScanner.clear();
+            modal.classList.add('hidden');
+          });
+        } else {
+          modal.classList.add('hidden');
+        }
+      }
+    }
+
+    // Auto load default on open
+    window.addEventListener('DOMContentLoaded', () => loadEquipmentDetails('FL-003'));
+  </script>
+</body>
+</html>
