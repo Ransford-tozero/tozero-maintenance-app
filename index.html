@@ -1,201 +1,45 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Maintenance PWA</title>
-  <!-- PWA Manifest & iOS Support -->
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#2563eb">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+// Function called by BOTH the Load button AND the QR Scanner
+async function loadEquipmentDetails(pidToLoad) {
+  // 1. Get PID from argument (QR Scanner) or from input box (Manual Entry)
+  const inputEl = document.getElementById('pidInput');
+  const pid = (pidToLoad || inputEl.value).trim();
   
-  <!-- Tailwind CSS & QR Scanner Library -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/html5-qrcode"></script>
-</head>
-<body class="bg-slate-900 text-slate-100 min-h-screen pb-12 font-sans">
+  if (!pid) return;
 
-  <!-- TOP BAR -->
-  <header class="sticky top-0 z-50 bg-slate-800/90 backdrop-blur border-b border-slate-700 px-4 py-3 flex justify-between items-center">
-    <div class="flex items-center space-x-2">
-      <span class="text-xl">🛠️</span>
-      <h1 class="font-bold text-lg text-white">Maintenance Hub</h1>
-    </div>
-    <button id="scanBtn" onclick="toggleScanner()" class="bg-blue-600 hover:bg-blue-500 text-white text-sm px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5">
-      📷 <span>Scan QR</span>
-    </button>
-  </header>
+  // Show loading indicator
+  document.getElementById('machineCard').classList.add('opacity-50');
 
-  <main class="p-4 max-w-md mx-auto">
+  try {
+    // 2. Fetch live machine data from Apps Script
+    const response = await fetch(`${API_URL}?action=getMachineDetails&pid=${encodeURIComponent(pid)}`);
+    const data = await response.json();
 
-    <!-- QR CAMERA SCANNER (HIDDEN BY DEFAULT) -->
-    <div id="scannerCard" class="hidden mb-6 bg-slate-800 p-4 rounded-xl border border-blue-500/30 shadow-lg">
-      <div class="flex justify-between items-center mb-2">
-        <h2 class="text-sm font-semibold text-blue-400">Scan Machine QR Code</h2>
-        <button onclick="toggleScanner()" class="text-slate-400 hover:text-white text-xs">Close ✕</button>
-      </div>
-      <div id="reader" class="overflow-hidden rounded-lg bg-black"></div>
-    </div>
-
-    <!-- PID MANUAL SELECTOR -->
-    <div class="mb-6">
-      <label class="block text-xs font-semibold text-slate-400 mb-1">SELECT MACHINE / PID</label>
-      <div class="flex gap-2">
-        <input type="text" id="pidInput" placeholder="e.g. FL-003" value="FL-003" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 uppercase">
-        <button onclick="loadMachineDetails()" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm font-semibold">Load</button>
-      </div>
-    </div>
-
-    <!-- LOADING SPINNER -->
-    <div id="loader" class="hidden text-center py-8">
-      <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent"></div>
-      <p class="text-xs text-slate-400 mt-2">Fetching live machine data...</p>
-    </div>
-
-    <!-- MACHINE DETAILS CONTAINER -->
-    <div id="machineContent" class="space-y-6">
-
-      <!-- HEADER CARD -->
-      <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-        <div class="flex justify-between items-start">
-          <div>
-            <span id="machCategory" class="text-xs uppercase px-2 py-0.5 bg-slate-700 text-slate-300 rounded font-semibold">Vehicle</span>
-            <h2 id="machPid" class="text-2xl font-bold text-white mt-1">FL-003</h2>
-            <p id="machDesc" class="text-sm text-slate-400">Terra Forklift</p>
-          </div>
-          <span id="machLocation" class="text-xs bg-blue-900/50 text-blue-300 border border-blue-700/50 px-2.5 py-1 rounded-full">Karlsfeld</span>
-        </div>
-      </div>
-
-      <!-- ACTIVE TASKS CHECKLIST -->
-      <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">📋 Scheduled Checklist</h3>
-        <div class="space-y-2 text-sm" id="checklist">
-          <label class="flex items-start gap-3 p-2 rounded hover:bg-slate-700/50 cursor-pointer">
-            <input type="checkbox" class="mt-1 accent-blue-500 h-4 w-4">
-            <span>Check hydraulic oil levels and hose fittings</span>
-          </label>
-          <label class="flex items-start gap-3 p-2 rounded hover:bg-slate-700/50 cursor-pointer">
-            <input type="checkbox" class="mt-1 accent-blue-500 h-4 w-4">
-            <span>Inspect tire pressure and tread wear</span>
-          </label>
-          <label class="flex items-start gap-3 p-2 rounded hover:bg-slate-700/50 cursor-pointer">
-            <input type="checkbox" class="mt-1 accent-blue-500 h-4 w-4">
-            <span>Verify emergency brake operation</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- MAINTENANCE HISTORY TIMELINE -->
-      <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">📜 Maintenance History</h3>
-        <div id="historyTimeline" class="relative border-l border-slate-700 ml-2 space-y-6">
-          <!-- Timeline Items Injected Here -->
-        </div>
-      </div>
-
-    </div>
-  </main>
-
-  <script>
-    // ⚠️ REPLACE THIS WITH YOUR WEB APP OR /dev URL
-    const API_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"; 
-
-    let html5QrcodeScanner = null;
-
-    // Load default PID on boot
-    document.addEventListener("DOMContentLoaded", () => {
-      loadMachineDetails();
-      registerServiceWorker();
-    });
-
-    async function loadMachineDetails() {
-      const pid = document.getElementById("pidInput").value.trim();
-      if (!pid) return;
-
-      document.getElementById("loader").classList.remove("hidden");
-      document.getElementById("machineContent").classList.add("hidden");
-
-      try {
-        const res = await fetch(`${API_URL}?action=getMachineDetails&pid=${encodeURIComponent(pid)}`);
-        const data = await res.json();
-        
-        renderMachineData(data);
-      } catch (err) {
-        alert("Failed to load machine data. Check network or API URL.");
-      } finally {
-        document.getElementById("loader").classList.add("hidden");
-        document.getElementById("machineContent").classList.remove("hidden");
-      }
+    if (data.error) {
+      alert('Machine not found: ' + pid);
+      return;
     }
 
-    function renderMachineData(data) {
-      const info = data.info || {};
-      
-      document.getElementById("machPid").innerText = data.pid || "Unknown";
-      document.getElementById("machDesc").innerText = info['Description'] || info['Category'] || "Industrial Equipment";
-      document.getElementById("machCategory").innerText = info['Category'] || "Equipment";
-      document.getElementById("machLocation").innerText = info['Sub_system_location'] || "Gendorf Site";
+    // 3. Update the UI dynamically
+    document.getElementById('displayPid').textContent = data.pid.toUpperCase();
+    document.getElementById('displayTitle').textContent = data.info['Equipment Name'] || data.info['Type'] || 'Equipment';
+    document.getElementById('displayLocation').textContent = data.info['Location'] || 'Facility';
 
-      // Render History Timeline
-      const timeline = document.getElementById("historyTimeline");
-      timeline.innerHTML = "";
+    // 4. Render Maintenance Checklist
+    renderChecklist(data.maint);
 
-      if (!data.history || data.history.length === 0) {
-        timeline.innerHTML = `<p class="text-xs text-slate-500 ml-4">No logged history found for this machine.</p>`;
-        return;
-      }
+    // 5. Render Timeline History
+    renderTimeline(data.history);
 
-      data.history.forEach(item => {
-        const date = item['Date and time of completion'] || item['Date'] || 'Recent';
-        const tech = item['Technician email (or external email)'] || 'Technician';
-        const status = item['Is the maintenance being planed or executed?'] || 'Executed';
+  } catch (err) {
+    console.error('Failed to load machine data:', err);
+  } finally {
+    document.getElementById('machineCard').classList.remove('opacity-50');
+  }
+}
 
-        timeline.innerHTML += `
-          <div class="ml-4 relative">
-            <div class="absolute -left-[21px] top-1.5 w-2.5 h-2.5 bg-blue-500 rounded-full ring-4 ring-slate-800"></div>
-            <div class="text-xs text-slate-400 font-mono">${date}</div>
-            <div class="text-sm font-semibold text-white">${status} Maintenance</div>
-            <div class="text-xs text-slate-400">By: ${tech}</div>
-          </div>
-        `;
-      });
-    }
-
-    // QR CODE SCANNER TOGGLE
-    function toggleScanner() {
-      const card = document.getElementById("scannerCard");
-      if (card.classList.contains("hidden")) {
-        card.classList.remove("hidden");
-        html5QrcodeScanner = new Html5Qrcode("reader");
-        html5QrcodeScanner.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 200, height: 200 } },
-          onScanSuccess
-        );
-      } else {
-        card.classList.add("hidden");
-        if (html5QrcodeScanner) {
-          html5QrcodeScanner.stop().then(() => html5QrcodeScanner.clear());
-        }
-      }
-    }
-
-    function onScanSuccess(decodedText) {
-      toggleScanner();
-      document.getElementById("pidInput").value = decodedText;
-      loadMachineDetails();
-    }
-
-    // REGISTER SERVICE WORKER FOR PWA
-    function registerServiceWorker() {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js')
-          .then(() => console.log('PWA Service Worker Active'))
-          .catch(err => console.error('SW Registration Failed', err));
-      }
-    }
-  </script>
-</body>
-</html>
+// Bind Enter Key press inside the input box
+document.getElementById('pidInput').addEventListener('keypress', function (e) {
+  if (e.key === 'Enter') {
+    loadEquipmentDetails();
+  }
+});
