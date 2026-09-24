@@ -1,4 +1,5 @@
 // Function called by BOTH the Load button AND the QR Scanner
+const API_URL = "https://script.google.com/macros/s/AKfycbx.../exec";
 async function loadEquipmentDetails(pidToLoad) {
   // 1. Get PID from argument (QR Scanner) or from input box (Manual Entry)
   const inputEl = document.getElementById('pidInput');
